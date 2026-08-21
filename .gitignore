@@ -1,0 +1,24 @@
+# Written by the surplus director before the first snapshot.
+.DS_Store
+node_modules/
+.build/
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.venv/
+venv/
+__pycache__/
+*.pyc
+dist/
+.next/
+Pods/
+.expo/
+*.noindex/
+build-*/
+*.pcm
+*.o
+ModuleCache/
+.env
+.env.*
+*.log
