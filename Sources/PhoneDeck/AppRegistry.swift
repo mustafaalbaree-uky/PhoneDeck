@@ -74,6 +74,15 @@ enum AppRegistry {
             installArgs: [],
             stateDir: "\(home)/.ontime"
         ),
+        KnownApp(
+            id: "etaboard",
+            displayName: "EtaBoard",
+            bundleID: "com.mammer55.etaboard",
+            repoPath: "\(home)/Code/etaboard",
+            installScript: "\(home)/Code/etaboard/tools/install.sh",
+            installArgs: [],
+            stateDir: "\(home)/.etaboard"
+        ),
     ]
 
     /// Directory names never worth descending into while scanning for stray
