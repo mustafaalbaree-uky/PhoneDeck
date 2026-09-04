@@ -3,17 +3,10 @@ import Combine
 
 struct AppRow: Identifiable {
     let app: KnownApp
-    var status: ExpiryStatus
+    /// When PhoneDeck last installed this app to the phone now picked, and
+    /// how much that date is worth. See `InstallRecord`.
+    var record: InstallRecord.Reading
     var id: String { app.id }
-}
-
-/// A reinstall that has been announced and starts when `fireAt` passes,
-/// unless it's cancelled first. The gap is deliberate: it's the window in
-/// which "don't type anything into that app right now" is still actionable.
-struct PendingAuto {
-    let rowIDs: [String]
-    let names: [String]
-    let fireAt: Date
 }
 
 @MainActor
@@ -27,76 +20,32 @@ final class AppState: ObservableObject {
     /// fixed-size status strip so the window never resizes while installing.
     @Published var statusLine: String?
 
-    /// Reinstall expiring apps unattended whenever the phone is reachable.
-    @Published var autoEnabled: Bool = AutoReinstallSettings.enabled {
-        didSet {
-            AutoReinstallSettings.enabled = autoEnabled
-            if autoEnabled {
-                evaluateAuto()
-            } else {
-                cancelPendingAuto()
-            }
-        }
-    }
-    /// Non-nil while an announced reinstall is counting down.
-    @Published var pendingAuto: PendingAuto?
-
-    /// Whether the popover is showing every known app (so the rest can be
-    /// starred or unstarred) or just the ones already starred. Off by
-    /// default: day to day, only the apps that actually auto-reinstall
-    /// matter, and the full registry is clutter. Not persisted — each
-    /// launch starts back in the quiet view.
-    @Published var showAutoPicker = false
-
-    /// Ids of the (at most `AutoReinstallSettings.maxAutoReinstallApps`)
-    /// apps starred for unattended reinstall. Every other known app stays
-    /// in the list for a manual reinstall but is never touched on its own.
-    @Published var autoReinstallIDs: Set<String> = AutoReinstallSettings.selectedIDs
-
-    /// Stars or unstars an app for auto-reinstall. Silently ignored once the
-    /// cap is full — the star button in the UI disables itself in that case,
-    /// so this is just a safety net against a stale tap.
-    func toggleAutoReinstall(_ id: String) {
-        if autoReinstallIDs.contains(id) {
-            autoReinstallIDs.remove(id)
-        } else if autoReinstallIDs.count < AutoReinstallSettings.maxAutoReinstallApps {
-            autoReinstallIDs.insert(id)
-        } else {
-            return
-        }
-        AutoReinstallSettings.selectedIDs = autoReinstallIDs
-        NotificationManager.reschedule(rows: rows, starredIDs: autoReinstallIDs)
-    }
-
-    /// Countdown to the armed batch, and the once-a-minute re-evaluation.
-    /// Held here rather than in the extension because stored properties
-    /// can't live in one.
-    var autoTimer: Timer?
-    var autoPollTimer: Timer?
-    /// App id → don't auto-touch it again before this date. Set by a failed
-    /// attempt and by "Skip" on the warning banner; kept on disk so it
-    /// outlives a relaunch.
-    var snoozedUntil: [String: Date] {
-        get { AutoReinstallSettings.snoozes }
-        set { AutoReinstallSettings.snoozes = newValue }
-    }
-    var lastUnreachableWarning: Date?
-
     let deviceMonitor = DeviceMonitor()
+    private var cancellables = Set<AnyCancellable>()
 
-    /// `includeDiscovery` is off for the once-a-minute auto check: walking
-    /// ~/Code for stray Xcode projects is far too heavy to do on that
-    /// cadence, and nothing about it changes an expiry date.
+    init() {
+        // Install dates are read per phone, so switching phones has to
+        // re-read them. The cheap refresh: no ~/Code walk, just timestamps.
+        deviceMonitor.targetChanged
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.refresh(includeDiscovery: false) }
+            .store(in: &cancellables)
+    }
+
+    /// `includeDiscovery` is off for the cheap refreshes: walking ~/Code for
+    /// stray Xcode projects is far heavier than re-reading a handful of
+    /// timestamps, and nothing about it changes between two clicks.
     func refresh(includeDiscovery: Bool = true) {
+        let deviceID = deviceMonitor.target?.id
         rows = AppRegistry.known.map { app in
-            AppRow(app: app, status: ExpiryStatus.read(
-                stateFile: app.lastInstallFile, bundleID: app.bundleID
-            ))
+            AppRow(
+                app: app,
+                record: InstallRecord.reading(stateDir: app.stateDir, deviceID: deviceID)
+            )
         }
         if includeDiscovery {
             discovered = AppRegistry.scanForUnregistered()
         }
-        NotificationManager.reschedule(rows: rows, starredIDs: autoReinstallIDs)
     }
 
     func toggle(_ id: String) {
@@ -107,12 +56,12 @@ final class AppState: ObservableObject {
         }
     }
 
-    func reinstallSelected() {
+    func installSelected() {
         guard !selection.isEmpty, !isInstalling else { return }
-        // A hand-driven install takes over from anything armed: it covers the
-        // same ground, and leaving the countdown running would start a second
-        // build right behind this one.
-        cancelPendingAuto()
+        // Nothing installs without a phone resolved to a UDID. The scripts
+        // would otherwise fall back to picking one themselves, which is the
+        // behaviour the picker exists to replace.
+        guard let device = deviceMonitor.target else { return }
 
         let targets = rows.filter { selection.contains($0.app.id) }
         isInstalling = true
@@ -120,27 +69,41 @@ final class AppState: ObservableObject {
         statusLine = nil
 
         Task {
-            let result = await self.performInstalls(targets)
+            let result = await self.performInstalls(targets, to: device)
 
             self.isInstalling = false
             self.statusLine = nil
             self.selection.removeAll()
             self.refresh()
             self.lastResultMessage = Self.resultMessage(
-                succeeded: result.succeeded, failed: result.failed
+                succeeded: result.succeeded, failed: result.failed, deviceName: device.name
+            )
+            // A build runs for minutes and the popover closes the moment you
+            // click away, so the result has to be able to find you.
+            NotificationManager.installFinished(
+                succeeded: result.succeeded, failed: result.failed, deviceName: device.name
             )
         }
     }
 
-    /// Runs each app's script in turn, streaming its output into
-    /// `statusLine`. Shared by the manual button and the unattended path so
-    /// both behave identically.
-    func performInstalls(_ targets: [AppRow]) async -> (succeeded: [String], failed: [String]) {
+    /// Runs each app's script in turn against one phone, streaming its
+    /// output into `statusLine`.
+    func performInstalls(
+        _ targets: [AppRow], to device: PhoneDevice
+    ) async -> (succeeded: [String], failed: [String]) {
         var succeeded: [String] = []
         var failed: [String] = []
+        let environment = [
+            "PHONEDECK_DEVICE_ID": device.id,
+            "PHONEDECK_DEVICE_NAME": device.name,
+        ]
         for row in targets {
             statusLine = "\(row.app.displayName): starting…"
-            let outcome = await Installer.run(scriptPath: row.app.installScript, args: row.app.installArgs) { line in
+            let outcome = await Installer.run(
+                scriptPath: row.app.installScript,
+                args: row.app.installArgs,
+                environment: environment
+            ) { line in
                 self.statusLine = "\(row.app.displayName): \(line)"
             }
             switch outcome {
@@ -151,13 +114,13 @@ final class AppState: ObservableObject {
         return (succeeded, failed)
     }
 
-    static func resultMessage(succeeded: [String], failed: [String]) -> String {
+    static func resultMessage(succeeded: [String], failed: [String], deviceName: String) -> String {
         if failed.isEmpty {
-            return "Reinstalled: \(succeeded.joined(separator: ", "))"
+            return "Installed to \(deviceName): \(succeeded.joined(separator: ", "))"
         } else if succeeded.isEmpty {
-            return "Reinstall failed: \(failed.joined(separator: ", ")). Check the phone is reachable and unlocked."
+            return "Install to \(deviceName) failed: \(failed.joined(separator: ", ")). Check the phone is reachable and unlocked."
         } else {
-            return "Reinstalled \(succeeded.joined(separator: ", ")). Failed: \(failed.joined(separator: ", "))."
+            return "Installed \(succeeded.joined(separator: ", ")) to \(deviceName). Failed: \(failed.joined(separator: ", "))."
         }
     }
 }

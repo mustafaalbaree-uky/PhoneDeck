@@ -40,18 +40,6 @@ enum Theme {
     static let cardFillHover = Color.primary.opacity(0.09)
     static let cardStroke = Color.primary.opacity(0.07)
 
-    // MARK: Expiry colors
-
-    /// Green while there is room to breathe, amber on the last two days,
-    /// red once the profile is actually dead. Same thresholds the classic
-    /// look used — only the shapes they paint changed.
-    static func expiryColor(_ status: ExpiryStatus) -> Color {
-        guard let days = status.daysRemaining else { return .secondary }
-        if status.isExpired || days <= 0 { return Color(red: 1.0, green: 0.33, blue: 0.33) }
-        if days <= 2 { return Color(red: 1.0, green: 0.65, blue: 0.2) }
-        return Color(red: 0.25, green: 0.82, blue: 0.5)
-    }
-
     /// A stable per-app tint for the monogram tile, so each app keeps the
     /// same color between launches without anyone having to pick one. The
     /// hash is the app's own id, and the hues are spaced far enough apart

@@ -22,11 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         UNUserNotificationCenter.current().delegate = self
         NotificationManager.requestAuthorization()
-        NotificationManager.registerCategories()
 
         state.refresh()
         state.deviceMonitor.start()
-        state.startAutoReinstallLoop()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         updateIcon(connected: false)
@@ -54,10 +52,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] in
                 self?.state.refresh()
                 self?.showPopover()
-                // Don't wait out the rest of the minute-long poll: a phone
-                // that appears for two minutes should still get its renewal
-                // announced immediately.
-                self?.state.evaluateAuto()
             }
             .store(in: &cancellables)
     }
@@ -166,9 +160,8 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         completionHandler([.banner, .sound])
     }
 
-    /// The two buttons on the "about to reinstall" banner. Tapping the body
-    /// of the banner (`defaultActionIdentifier`) opens the popover instead,
-    /// which is where the countdown and its Cancel button live.
+    /// Clicking the install result banner opens the popover, which is where
+    /// the full outcome line and the app list are.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
@@ -176,16 +169,9 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     ) {
         let action = response.actionIdentifier
         Task { @MainActor in
-            switch action {
-            case NotificationManager.actionInstallNow:
-                self.state.runPendingAutoNow()
-            case NotificationManager.actionSkip:
-                self.state.cancelPendingAuto(snooze: true)
-            case UNNotificationDefaultActionIdentifier:
+            if action == UNNotificationDefaultActionIdentifier {
                 self.state.refresh()
                 self.showPopover()
-            default:
-                break
             }
             completionHandler()
         }

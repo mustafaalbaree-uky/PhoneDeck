@@ -38,14 +38,20 @@ private final class LineAccumulator: @unchecked Sendable {
 }
 
 enum Installer {
-    /// Runs an app's reinstall script to completion. The script itself is
-    /// responsible for resetting the expiry clock on success. Pass/fail is
+    /// Runs an app's install script to completion. The script itself is
+    /// responsible for stamping `last_install` on success. Pass/fail is
     /// reported back via the return value; `onOutput` is called on the main
     /// thread with each line the script prints (stdout and stderr merged,
     /// interleaved in real time) so the UI can surface progress as it happens.
+    ///
+    /// `environment` is layered over PhoneDeck's own environment rather than
+    /// replacing it, and is how the chosen phone reaches the script: every
+    /// install script reads `PHONEDECK_DEVICE_ID` and builds for that phone
+    /// instead of picking one itself.
     static func run(
         scriptPath: String,
         args: [String] = [],
+        environment: [String: String] = [:],
         onOutput: @escaping (String) -> Void = { _ in }
     ) async -> InstallOutcome {
         await withCheckedContinuation { continuation in
@@ -58,6 +64,10 @@ enum Installer {
             // find them otherwise. Passing the script as an argument (rather
             // than via -c string interpolation) keeps args array-safe.
             process.arguments = ["-l", scriptPath] + args
+            if !environment.isEmpty {
+                process.environment = ProcessInfo.processInfo.environment
+                    .merging(environment) { _, passed in passed }
+            }
 
             let pipe = Pipe()
             process.standardOutput = pipe

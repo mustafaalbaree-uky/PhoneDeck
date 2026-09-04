@@ -1,41 +1,32 @@
 import SwiftUI
 
 /// PhoneDeck's current look. The whole popover is one column of cards on a
-/// faint accent wash: a device header, an optional countdown, a card per
-/// app, and a footer that holds the controls.
+/// faint accent wash: a device header, a card per app, and a footer that
+/// holds the controls.
 ///
 /// The previous design is still in the build, unchanged, in
-/// ClassicContentView.swift — right-click the menu bar icon to switch back.
+/// ClassicContentView.swift. Right-click the menu bar icon to switch back.
 struct ContentView: View {
     @ObservedObject var state: AppState
     @ObservedObject var monitor: DeviceMonitor
+    @State private var pickerOpen = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             deviceHeader
 
-            if let pending = state.pendingAuto {
-                countdownBanner(pending)
-                    .padding(.horizontal, Theme.gutter)
-                    .padding(.bottom, 10)
-            }
-
-            // No ScrollView here on purpose — this list should never scroll.
-            // It just grows/shrinks with however many rows are visible.
+            // No ScrollView here on purpose. This list should never scroll,
+            // it just grows and shrinks with however many rows there are.
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(visibleRows) { row in
+                ForEach(state.rows) { row in
                     AppCardView(
                         row: row,
                         isSelected: state.selection.contains(row.app.id),
-                        isAutoSelected: state.autoReinstallIDs.contains(row.app.id),
-                        autoSelectionFull: state.autoReinstallIDs.count >= AutoReinstallSettings.maxAutoReinstallApps,
-                        showAutoStar: state.showAutoPicker,
-                        onToggle: { state.toggle(row.app.id) },
-                        onToggleAuto: { state.toggleAutoReinstall(row.app.id) }
+                        onToggle: { state.toggle(row.app.id) }
                     )
                 }
 
-                if state.showAutoPicker && !state.discovered.isEmpty {
+                if !state.discovered.isEmpty {
                     sectionLabel("Found, not set up yet")
                     ForEach(state.discovered) { project in
                         DiscoveredCardView(project: project)
@@ -54,14 +45,6 @@ struct ContentView: View {
                 .allowsHitTesting(false)
         }
         .animation(.easeOut(duration: 0.18), value: state.selection)
-        .animation(.easeOut(duration: 0.2), value: state.showAutoPicker)
-    }
-
-    /// Every known app while managing which 3 are starred; just the starred
-    /// ones the rest of the time, so day-to-day the list is only what
-    /// actually auto-reinstalls.
-    private var visibleRows: [AppRow] {
-        state.showAutoPicker ? state.rows : state.rows.filter { state.autoReinstallIDs.contains($0.app.id) }
     }
 
     private func sectionLabel(_ text: String) -> some View {
@@ -75,7 +58,64 @@ struct ContentView: View {
 
     // MARK: - Header
 
+    /// The header is also the device picker. It only opens when there is a
+    /// choice to make: more than one phone reachable, or a phone picked
+    /// earlier that PhoneDeck has to be able to hand back.
+    ///
+    /// The list expands inside the popover rather than dropping an NSMenu.
+    /// The popover is `.transient` and closes on the first mouse-down it
+    /// sees outside itself, which a menu's own event tracking is a good way
+    /// to trip; expanding in place cannot fight it. A SwiftUI `Menu` also
+    /// throws away most of a custom label under `.borderlessButton`, which
+    /// left the header as a bare line of text.
     private var deviceHeader: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if showsPicker {
+                // A real Button rather than a tap gesture on the row: it
+                // gets the accessibility role, the keyboard, and the click
+                // handling for free.
+                Button {
+                    withAnimation(.easeOut(duration: 0.16)) { pickerOpen.toggle() }
+                } label: {
+                    headerBody
+                }
+                .buttonStyle(.plain)
+                .help(pickerOpen ? "Close the phone list" : "Choose which iPhone to install to")
+            } else {
+                headerBody
+            }
+
+            if showsPicker && pickerOpen {
+                VStack(alignment: .leading, spacing: 4) {
+                    pickerRow(
+                        title: "Whichever is here",
+                        detail: nil,
+                        icon: "sparkles",
+                        picked: monitor.preferredDeviceID == nil
+                    ) { monitor.choose(nil) }
+
+                    ForEach(monitor.devices) { device in
+                        pickerRow(
+                            // Two of the phones answer to the same name, so
+                            // the model is part of the line underneath.
+                            title: device.name,
+                            detail: "\(device.model) · \(device.transport.label)",
+                            icon: device.transport == .wired ? "cable.connector" : "wifi",
+                            picked: device.id == monitor.preferredDeviceID
+                        ) { monitor.choose(device) }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, Theme.gutter)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+        .onChange(of: showsPicker) { canPick in
+            if !canPick { pickerOpen = false }
+        }
+    }
+
+    private var headerBody: some View {
         HStack(spacing: 11) {
             ZStack {
                 RoundedRectangle(cornerRadius: Theme.tileRadius, style: .continuous)
@@ -89,27 +129,20 @@ struct ContentView: View {
             .frame(width: 36, height: 36)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(monitor.connected ? (monitor.deviceModel ?? "iPhone connected") : "No iPhone connected")
+                Text(headerTitle)
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
 
-                if monitor.connected, let name = monitor.deviceName {
-                    // The transport is worth showing: a Wi-Fi link installs
-                    // fine but is slower and can drop mid-build, so it helps
-                    // to know which one is in play before starting.
-                    HStack(spacing: 4) {
-                        Image(systemName: monitor.transport == .wired ? "cable.connector" : "wifi")
+                HStack(spacing: 4) {
+                    if let icon = headerSubtitleIcon {
+                        Image(systemName: icon)
                             .font(.system(size: 9, weight: .semibold))
-                        Text(monitor.transport.map { "\(name) · \($0.label)" } ?? name)
-                            .font(.system(size: 11))
                     }
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                } else if !monitor.connected {
-                    Text("Waiting for a paired iPhone")
+                    Text(headerSubtitle)
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
                 }
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             }
 
             Spacer(minLength: 6)
@@ -117,57 +150,97 @@ struct ContentView: View {
             if monitor.connected {
                 LiveDot()
             }
+            if showsPicker {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(pickerOpen ? 180 : 0))
+            }
         }
-        .padding(.horizontal, Theme.gutter)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
+        .contentShape(Rectangle())
     }
 
-    // MARK: - Countdown
-
-    /// The visible half of the warning that also went out as a banner: what
-    /// is about to be rebuilt, how long is left, and a way out.
-    private func countdownBanner(_ pending: PendingAuto) -> some View {
-        let amber = Color(red: 1.0, green: 0.65, blue: 0.2)
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(amber)
-                // A live-ticking countdown rather than a fixed "in 5 min",
-                // which would be a lie the moment the popover is reopened.
-                (Text("Reinstalling in ")
-                    .font(.system(size: 12, weight: .semibold))
-                 + Text(pending.fireAt, style: .timer)
-                    .font(.system(size: 12, weight: .semibold).monospacedDigit()))
-                Spacer(minLength: 0)
+    private func pickerRow(
+        title: String,
+        detail: String?,
+        icon: String,
+        picked: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            action()
+            withAnimation(.easeOut(duration: 0.16)) { pickerOpen = false }
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .frame(width: 13)
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                    if let detail {
+                        Text(detail)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 4)
+                if picked {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.accent)
+                }
             }
-
-            Text(pending.names.joined(separator: ", "))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-
-            Text("Apps restart when they're reinstalled. Cancel if you're in the middle of entering something.")
-                .font(.system(size: 10.5))
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 8) {
-                PillButton(title: "Cancel", tint: amber) { state.cancelPendingAuto(snooze: true) }
-                PillButton(title: "Do it now", tint: amber, filled: true) { state.runPendingAutoNow() }
-                Spacer(minLength: 0)
-            }
-            .padding(.top, 1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous)
+                    .fill(picked ? Theme.accent.opacity(0.12) : Theme.cardFill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous)
+                    .strokeBorder(picked ? Theme.accent.opacity(0.5) : Theme.cardStroke, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous)
-                .fill(amber.opacity(0.10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous)
-                        .strokeBorder(amber.opacity(0.28), lineWidth: 1)
-                )
-        )
+        .buttonStyle(.plain)
+    }
+
+    /// A picked phone that has gone away is never quietly swapped for
+    /// another one, so the header has three states rather than two.
+    private var headerTitle: String {
+        if let target = monitor.target { return target.model }
+        if monitor.preferredMissing {
+            return "\(monitor.preferredDeviceName ?? "Chosen iPhone") not reachable"
+        }
+        return "No iPhone connected"
+    }
+
+    private var headerSubtitle: String {
+        if let target = monitor.target {
+            // The transport is worth showing: a Wi-Fi link installs fine but
+            // is slower and can drop mid-build, so it helps to know which
+            // one is in play before starting.
+            return "\(target.name) · \(target.transport.label)"
+        }
+        if monitor.preferredMissing && !monitor.devices.isEmpty {
+            return monitor.devices.count == 1
+                ? "1 other iPhone reachable"
+                : "\(monitor.devices.count) other iPhones reachable"
+        }
+        return "Waiting for a paired iPhone"
+    }
+
+    private var headerSubtitleIcon: String? {
+        guard let target = monitor.target else { return nil }
+        return target.transport == .wired ? "cable.connector" : "wifi"
+    }
+
+    private var showsPicker: Bool {
+        monitor.devices.count > 1 || monitor.preferredDeviceID != nil
     }
 
     // MARK: - Footer
@@ -176,46 +249,25 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 8) {
             statusStrip
 
-            VStack(alignment: .leading, spacing: 7) {
-                Toggle(isOn: $state.autoEnabled) {
-                    Text("Reinstall expiring apps automatically")
-                        .font(.system(size: 11.5))
-                }
-                Toggle(isOn: $state.showAutoPicker) {
-                    Text("Manage auto-reinstall apps")
-                        .font(.system(size: 11.5))
-                }
-            }
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .tint(Theme.accent)
-
-            // Only means anything once the toggle above is on — that's what
-            // reveals the stars this count is describing.
-            if state.showAutoPicker {
-                SlotMeter(used: state.autoReinstallIDs.count,
-                          total: AutoReinstallSettings.maxAutoReinstallApps)
-            }
-
             HStack(spacing: 8) {
                 PillButton(title: "All") {
-                    state.selection = Set(visibleRows.map { $0.app.id })
+                    state.selection = Set(state.rows.map { $0.app.id })
                 }
-                PillButton(title: "Expiring") {
-                    state.selection = Set(visibleRows.filter { ($0.status.daysRemaining ?? 0) <= 1 }.map { $0.app.id })
+                PillButton(title: "None") {
+                    state.selection = []
                 }
                 Spacer(minLength: 0)
-                reinstallButton
+                installButton
             }
 
-            // Tied to the phone being absent, and nothing else. It used to
-            // also require a selection, which meant the first click on an app
-            // grew the footer by a line, resized the popover under the
-            // cursor, and shoved every card up. The reason the button is
-            // dead is the missing phone, so say it as soon as the phone is
-            // missing and leave the height alone while apps are picked.
-            if !monitor.connected {
-                Text("Plug in the iPhone, or put it on this Wi-Fi network, to reinstall.")
+            // Tied to there being no phone at all, and nothing else. It
+            // used to also require a selection, which meant the first click
+            // on an app grew the footer by a line, resized the popover under
+            // the cursor, and shoved every card up. When a phone is around
+            // but the picked one is away, the header already names the phone
+            // it is waiting for, so this line would only repeat it.
+            if !monitor.connected && monitor.devices.isEmpty {
+                Text("Plug in the iPhone, or put it on this Wi-Fi network, to install.")
                     .font(.system(size: 10.5))
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -225,10 +277,10 @@ struct ContentView: View {
         .padding(.bottom, 14)
     }
 
-    private var reinstallButton: some View {
+    private var installButton: some View {
         let enabled = !state.selection.isEmpty && !state.isInstalling && monitor.connected
         return Button {
-            state.reinstallSelected()
+            state.installSelected()
         } label: {
             HStack(spacing: 6) {
                 if state.isInstalling {
@@ -237,7 +289,7 @@ struct ContentView: View {
                     Image(systemName: "arrow.down.circle.fill")
                         .font(.system(size: 11, weight: .semibold))
                 }
-                Text(state.isInstalling ? "Installing…" : "Reinstall \(state.selection.count)")
+                Text(state.isInstalling ? "Installing…" : "Install \(state.selection.count)")
                     .font(.system(size: 12, weight: .semibold))
             }
             .foregroundStyle(enabled ? Color.white : Color.secondary)
@@ -255,8 +307,8 @@ struct ContentView: View {
 
     /// Only present when there is something to say. It still has a fixed
     /// height while it's up, so the popover holds still as install output
-    /// streams through it line by line — but with nothing to report it takes
-    /// no room at all, rather than leaving an empty band under the apps.
+    /// streams through it line by line, but with nothing to report it takes
+    /// no room at all rather than leaving an empty band under the apps.
     @ViewBuilder
     private var statusStrip: some View {
         if let text = statusText {
@@ -288,11 +340,7 @@ struct ContentView: View {
 private struct AppCardView: View {
     let row: AppRow
     let isSelected: Bool
-    let isAutoSelected: Bool
-    let autoSelectionFull: Bool
-    let showAutoStar: Bool
     let onToggle: () -> Void
-    let onToggleAuto: () -> Void
 
     @State private var hovering = false
 
@@ -312,11 +360,6 @@ private struct AppCardView: View {
             }
 
             Spacer(minLength: 4)
-
-            if showAutoStar {
-                autoStar
-            }
-            ExpiryRing(status: row.status)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
@@ -332,108 +375,29 @@ private struct AppCardView: View {
                               lineWidth: 1)
         )
         .contentShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
-        // The whole card is the checkbox now. A 34pt-tall target instead of
-        // a 14pt one, and nothing to aim at.
+        // The whole card is the checkbox. A 34pt tall target instead of a
+        // 14pt one, and nothing to aim at.
         .onTapGesture(perform: onToggle)
         .onHover { hovering = $0 }
-        .help(isSelected ? "Selected for reinstall — click to deselect" : "Click to select for reinstall")
+        .help(isSelected ? "Selected for install, click to deselect" : "Click to select for install")
     }
 
-    /// Stars this app in or out of the unattended-reinstall set. Disabled
-    /// (not hidden) once the cap is full and this app isn't already one of
-    /// the starred ones, so it's clear why tapping does nothing.
-    private var autoStar: some View {
-        Button(action: onToggleAuto) {
-            Image(systemName: isAutoSelected ? "star.fill" : "star")
-                .font(.system(size: 12))
-                .foregroundStyle(isAutoSelected
-                                 ? AnyShapeStyle(Color(red: 1.0, green: 0.78, blue: 0.25))
-                                 : AnyShapeStyle(Color.secondary.opacity(0.45)))
-                .frame(width: 20, height: 20)
-        }
-        .buttonStyle(.plain)
-        .disabled(!isAutoSelected && autoSelectionFull)
-        .help(isAutoSelected
-            ? "Auto-reinstalled when it's expiring. Click to stop."
-            : (autoSelectionFull
-                ? "Auto-reinstall slots are full — unstar one first"
-                : "Auto-reinstall this app when it's expiring"))
-    }
-
-    /// One line now, not two: the ring carries the countdown, so this text
-    /// only has to say when the app was last installed.
+    /// The only thing worth saying about an app that is not its name: when
+    /// PhoneDeck last put a build of it on the phone now picked.
     private var subtitle: String {
-        // Month/day only, no year: the whole window these dates describe is
-        // seven days wide, so the year is never the thing in question and
-        // dropping it is what lets both dates fit on one line.
-        let dateFormatter = DateFormatter()
-        dateFormatter.setLocalizedDateFormatFromTemplate("Md")
-        let timeFormatter = DateFormatter()
-        timeFormatter.timeStyle = .short
+        switch row.record.scope {
+        case .never: return "Never installed via PhoneDeck"
+        case .notThisDevice: return "Never installed to this iPhone"
+        case .thisDevice, .unrecordedDevice:
+            guard let lastInstall = row.record.date else { return "Never installed via PhoneDeck" }
 
-        // The expiry date is the useful half — it comes from the app's actual
-        // provisioning profile, which is what iOS enforces, and it does not
-        // always land seven days after the install.
-        guard let lastInstall = row.status.lastInstall else {
-            guard let expiry = row.status.expiresAt else { return "Never installed via PhoneDeck" }
-            return "Not installed here · expires \(dateFormatter.string(from: expiry))"
+            let dateFormatter = DateFormatter()
+            dateFormatter.setLocalizedDateFormatFromTemplate("MMMd")
+            let timeFormatter = DateFormatter()
+            timeFormatter.timeStyle = .short
+
+            return "Installed \(dateFormatter.string(from: lastInstall)), \(timeFormatter.string(from: lastInstall))"
         }
-        // Only the install date here. The expiry moved into the ring, whose
-        // tooltip carries the exact date — repeating it on this line was
-        // what pushed the text into an ellipsis.
-        return "Installed \(dateFormatter.string(from: lastInstall)), \(timeFormatter.string(from: lastInstall))"
-    }
-}
-
-/// Days left as an arc of the 7-day provisioning window, with the number in
-/// the middle. Reads at a glance from across the desk, which "5d left" in
-/// 10pt type never did.
-private struct ExpiryRing: View {
-    let status: ExpiryStatus
-
-    var body: some View {
-        let color = Theme.expiryColor(status)
-        ZStack {
-            Circle()
-                .stroke(color.opacity(0.18), lineWidth: 3)
-            Circle()
-                .trim(from: 0, to: fraction)
-                .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-            label
-                .foregroundStyle(color)
-        }
-        .frame(width: 30, height: 30)
-        .help(helpText)
-    }
-
-    @ViewBuilder
-    private var label: some View {
-        // isExpired, not days == 0: daysRemaining rounds up, so an app with
-        // hours left says "1d" and only a genuinely dead profile gets the
-        // exclamation mark.
-        if status.isExpired {
-            Image(systemName: "exclamationmark").font(.system(size: 12, weight: .bold))
-        } else if let days = status.daysRemaining {
-            (Text("\(days)").font(.system(size: 12, weight: .bold, design: .rounded))
-             + Text("d").font(.system(size: 8, weight: .bold, design: .rounded)))
-        } else {
-            Text("?").font(.system(size: 12, weight: .bold, design: .rounded))
-        }
-    }
-
-    private var fraction: CGFloat {
-        guard let days = status.daysRemaining, !status.isExpired else { return 1 }
-        return min(max(CGFloat(days) / CGFloat(provisioningWindowDays), 0.04), 1)
-    }
-
-    private var helpText: String {
-        guard let expiry = status.expiresAt else { return "No provisioning profile found" }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        let source = status.isMeasured ? "from the provisioning profile" : "estimated from the install date"
-        return "Expires \(formatter.string(from: expiry)) (\(source))"
     }
 }
 
@@ -456,7 +420,7 @@ private struct DiscoveredCardView: View {
                 Text(project.name)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
-                Text("No reinstall script yet")
+                Text("No install script yet")
                     .font(.system(size: 10.5))
                     .foregroundStyle(.tertiary)
             }
@@ -470,30 +434,7 @@ private struct DiscoveredCardView: View {
 
 // MARK: - Small parts
 
-/// The three auto-reinstall slots as three pips. Cheaper to read than
-/// "2/3" and it makes the cap feel like a real, finite thing.
-private struct SlotMeter: View {
-    let used: Int
-    let total: Int
-
-    var body: some View {
-        HStack(spacing: 5) {
-            HStack(spacing: 3) {
-                ForEach(0..<total, id: \.self) { index in
-                    Capsule()
-                        .fill(index < used ? AnyShapeStyle(Theme.accentGradient)
-                                           : AnyShapeStyle(Color.primary.opacity(0.12)))
-                        .frame(width: 14, height: 4)
-                }
-            }
-            Text("\(used) of \(total) auto slots used — star the apps above")
-                .font(.system(size: 10.5))
-                .foregroundStyle(.tertiary)
-        }
-    }
-}
-
-/// A soft blinking dot for a live connection. Slow and low-contrast on
+/// A soft blinking dot for a live connection. Slow and low contrast on
 /// purpose: it should read as "alive", not as an alarm.
 private struct LiveDot: View {
     @State private var pulsing = false

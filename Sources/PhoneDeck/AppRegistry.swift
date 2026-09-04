@@ -48,6 +48,15 @@ enum AppRegistry {
             stateDir: "\(home)/.shadiliya"
         ),
         KnownApp(
+            id: "pocketclaude",
+            displayName: "Pocket Claude",
+            bundleID: "com.mammer55.pocketclaude",
+            repoPath: "\(home)/Code/pocket-claude/ios",
+            installScript: "\(home)/Code/pocket-claude/ios/tools/install.sh",
+            installArgs: [],
+            stateDir: "\(home)/.pocketclaude"
+        ),
+        KnownApp(
             id: "clipkeyboard",
             displayName: "ClipKeyboard",
             bundleID: "com.mammer55.clipkeyboard",
@@ -75,6 +84,15 @@ enum AppRegistry {
             stateDir: "\(home)/.ontime"
         ),
         KnownApp(
+            id: "claudeusage",
+            displayName: "Claude Usage",
+            bundleID: "com.mammer55.claudeusage",
+            repoPath: "\(home)/Code/claude-usage/ios",
+            installScript: "\(home)/Code/claude-usage/ios/tools/install.sh",
+            installArgs: [],
+            stateDir: "\(home)/.claudeusage"
+        ),
+        KnownApp(
             id: "etaboard",
             displayName: "EtaBoard",
             bundleID: "com.mammer55.etaboard",
@@ -82,6 +100,18 @@ enum AppRegistry {
             installScript: "\(home)/Code/etaboard/tools/install.sh",
             installArgs: [],
             stateDir: "\(home)/.etaboard"
+        ),
+        // Mum's account tracker. This one installs to *her* phone rather than
+        // Mustafa's, so it is normally reached through TestFlight and the
+        // button here only does anything with her phone plugged into this Mac.
+        KnownApp(
+            id: "amanah",
+            displayName: "Amanah",
+            bundleID: "com.mammer55.amanah",
+            repoPath: "\(home)/Code/amanah",
+            installScript: "\(home)/Code/amanah/tools/install.sh",
+            installArgs: [],
+            stateDir: "\(home)/.amanah"
         ),
     ]
 
