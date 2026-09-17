@@ -31,6 +31,15 @@ enum AppRegistry {
     /// project grows a reinstall script of its own.
     static let known: [KnownApp] = [
         KnownApp(
+            id: "vitals",
+            displayName: "Vitals",
+            bundleID: "com.mammer55.vitals",
+            repoPath: "\(home)/Code/mac-vitals/ios",
+            installScript: "\(home)/Code/mac-vitals/ios/tools/install.sh",
+            installArgs: [],
+            stateDir: "\(home)/.vitals"
+        ),
+        KnownApp(
             id: "shadiliya",
             displayName: "Shadiliya",
             bundleID: "com.mammer55.hu",
