@@ -31,6 +31,15 @@ enum AppRegistry {
     /// project grows a reinstall script of its own.
     static let known: [KnownApp] = [
         KnownApp(
+            id: "stayathome",
+            displayName: "Stay at Home",
+            bundleID: "com.mustafaalbaree.stayathome",
+            repoPath: "\(home)/Code/stay-at-home/ios",
+            installScript: "\(home)/Code/stay-at-home/ios/tools/install.sh",
+            installArgs: [],
+            stateDir: "\(home)/.stayathome"
+        ),
+        KnownApp(
             id: "vitals",
             displayName: "Vitals",
             bundleID: "com.mammer55.vitals",
@@ -121,6 +130,17 @@ enum AppRegistry {
             installScript: "\(home)/Code/amanah/tools/install.sh",
             installArgs: [],
             stateDir: "\(home)/.amanah"
+        ),
+        // Study for lecpipe courses. The bundle id carries `.study` because
+        // com.mustafaalbaree.lecpipe is the Mac app.
+        KnownApp(
+            id: "lecpipe",
+            displayName: "Lecpipe",
+            bundleID: "com.mustafaalbaree.lecpipe.study",
+            repoPath: "\(home)/Code/lecpipe/ios",
+            installScript: "\(home)/Code/lecpipe/ios/tools/install.sh",
+            installArgs: [],
+            stateDir: "\(home)/.lecpipeios"
         ),
     ]
 

@@ -448,12 +448,12 @@ private struct LiveDot: View {
                     .stroke(Color(red: 0.25, green: 0.82, blue: 0.5).opacity(0.5), lineWidth: 3)
                     .scaleEffect(pulsing ? 1.9 : 1.0)
                     .opacity(pulsing ? 0 : 0.8)
+                    // Scoped to the ring. A repeatForever withAnimation in
+                    // onAppear also captures the popover's first layout pass,
+                    // so the backdrop and cards slid around on every open.
+                    .animation(.easeOut(duration: 1.6).repeatForever(autoreverses: false), value: pulsing)
             )
-            .onAppear {
-                withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) {
-                    pulsing = true
-                }
-            }
+            .onAppear { pulsing = true }
             .accessibilityLabel("iPhone reachable")
     }
 }
