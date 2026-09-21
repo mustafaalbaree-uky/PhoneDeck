@@ -74,7 +74,14 @@ final class DeviceMonitor: ObservableObject {
     let targetChanged = PassthroughSubject<Void, Never>()
 
     private var timer: Timer?
-    private let pollInterval: TimeInterval = 3
+
+    /// Fast while the popover is open, since that is when a stale answer is
+    /// visible. Slow otherwise: the only thing waiting on a background poll is
+    /// the popover opening itself when a phone arrives, and every poll is a
+    /// devicectl launch that wakes the pairing daemons.
+    private static let foregroundInterval: TimeInterval = 3
+    private static let backgroundInterval: TimeInterval = 20
+    private var pollInterval: TimeInterval = DeviceMonitor.backgroundInterval
 
     private static let preferredIDKey = "preferredDeviceID"
     private static let preferredNameKey = "preferredDeviceName"
@@ -99,9 +106,22 @@ final class DeviceMonitor: ObservableObject {
 
     func start() {
         poll()
-        timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
+        timer?.invalidate()
+        let t = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
             self?.poll()
         }
+        t.tolerance = pollInterval / 5
+        timer = t
+    }
+
+    /// The popover opening or closing. Opening polls at once, so the header is
+    /// never showing an answer up to twenty seconds old.
+    func setForeground(_ foreground: Bool) {
+        let wanted = foreground ? Self.foregroundInterval : Self.backgroundInterval
+        guard wanted != pollInterval || timer == nil else { return }
+        pollInterval = wanted
+        guard timer != nil else { return }
+        start()
     }
 
     func stop() {

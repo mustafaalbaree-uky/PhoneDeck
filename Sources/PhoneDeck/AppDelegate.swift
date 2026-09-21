@@ -32,11 +32,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.target = self
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
+        // The SwiftUI tree exists only while the popover is open. A hosting
+        // controller kept alive behind a closed popover goes on rendering its
+        // repeatForever animations (the LiveDot pulse) off screen: sampled at
+        // a steady 9% CPU on 21 Sep 2026 with nothing visible.
         popover = NSPopover()
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(
-            rootView: RootView(state: state, monitor: state.deviceMonitor)
-        )
+        popover.delegate = self
+        popover.contentViewController = Self.emptyContent()
 
         state.deviceMonitor.$connected
             .receive(on: DispatchQueue.main)
@@ -120,8 +123,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
+    private static func emptyContent() -> NSViewController {
+        let controller = NSViewController()
+        controller.view = NSView()
+        return controller
+    }
+
     private func showPopover() {
         guard let button = statusItem.button else { return }
+        if !popover.isShown {
+            let hosting = NSHostingController(
+                rootView: RootView(state: state, monitor: state.deviceMonitor)
+            )
+            popover.contentViewController = hosting
+            let fitted = hosting.view.fittingSize
+            if fitted.width > 0, fitted.height > 0 {
+                popover.contentSize = fitted
+            }
+            state.deviceMonitor.setForeground(true)
+        }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
 
@@ -146,6 +166,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.popover.performClose(nil)
             }
         }
+    }
+}
+
+extension AppDelegate: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        popover.contentViewController = Self.emptyContent()
+        state.deviceMonitor.setForeground(false)
     }
 }
 
