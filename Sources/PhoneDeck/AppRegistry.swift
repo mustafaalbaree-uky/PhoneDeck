@@ -131,6 +131,17 @@ enum AppRegistry {
             installArgs: [],
             stateDir: "\(home)/.amanah"
         ),
+        // The AR face shooter. Its rig data and sounds are in the repo, so a
+        // build needs nothing but the phone.
+        KnownApp(
+            id: "mugshot",
+            displayName: "Mugshot",
+            bundleID: "com.mammer55.mugshot",
+            repoPath: "\(home)/Code/mugshot",
+            installScript: "\(home)/Code/mugshot/tools/install.sh",
+            installArgs: [],
+            stateDir: "\(home)/.mugshot"
+        ),
         // Study for lecpipe courses. The bundle id carries `.study` because
         // com.mustafaalbaree.lecpipe is the Mac app.
         KnownApp(
