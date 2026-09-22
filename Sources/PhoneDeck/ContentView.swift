@@ -15,26 +15,28 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 0) {
             deviceHeader
 
-            // No ScrollView here on purpose. This list should never scroll,
-            // it just grows and shrinks with however many rows there are.
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(state.rows) { row in
-                    AppCardView(
-                        row: row,
-                        isSelected: state.selection.contains(row.app.id),
-                        onToggle: { state.toggle(row.app.id) }
-                    )
-                }
+            // The list grows with the rows until it reaches the bottom of
+            // the screen, then scrolls, so the footer always stays in view.
+            FitOrScroll(maxHeight: Theme.listMaxHeight) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(state.rows) { row in
+                        AppCardView(
+                            row: row,
+                            isSelected: state.selection.contains(row.app.id),
+                            onToggle: { state.toggle(row.app.id) }
+                        )
+                    }
 
-                if !state.discovered.isEmpty {
-                    sectionLabel("Found, not set up yet")
-                    ForEach(state.discovered) { project in
-                        DiscoveredCardView(project: project)
+                    if !state.discovered.isEmpty {
+                        sectionLabel("Found, not set up yet")
+                        ForEach(state.discovered) { project in
+                            DiscoveredCardView(project: project)
+                        }
                     }
                 }
+                .padding(.horizontal, Theme.gutter)
+                .padding(.bottom, 12)
             }
-            .padding(.horizontal, Theme.gutter)
-            .padding(.bottom, 12)
 
             footer
         }

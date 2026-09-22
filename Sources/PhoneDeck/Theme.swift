@@ -12,6 +12,13 @@ enum Theme {
     static let tileSize: CGFloat = 34
     static let gutter: CGFloat = 14
 
+    /// Tallest the app list gets before it scrolls: the screen the popover
+    /// opens on, less room for the header, the footer and the menu bar.
+    static var listMaxHeight: CGFloat {
+        let visible = NSScreen.main?.visibleFrame.height ?? 800
+        return max(240, visible - 300)
+    }
+
     // MARK: Palette
 
     /// The one accent the app spends: selection, the primary button, and

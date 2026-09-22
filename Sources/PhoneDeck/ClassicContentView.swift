@@ -13,30 +13,32 @@ struct ClassicContentView: View {
         VStack(alignment: .leading, spacing: 0) {
             deviceHeader
 
-            // No ScrollView here on purpose. This list should never scroll,
-            // it just grows and shrinks with however many rows there are.
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(state.rows) { row in
-                    ClassicAppRowView(
-                        row: row,
-                        isSelected: state.selection.contains(row.app.id),
-                        onToggle: { state.toggle(row.app.id) }
-                    )
-                }
+            // The list grows with the rows until it reaches the bottom of
+            // the screen, then scrolls, so the footer always stays in view.
+            FitOrScroll(maxHeight: Theme.listMaxHeight) {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(state.rows) { row in
+                        ClassicAppRowView(
+                            row: row,
+                            isSelected: state.selection.contains(row.app.id),
+                            onToggle: { state.toggle(row.app.id) }
+                        )
+                    }
 
-                if !state.discovered.isEmpty {
-                    Text("Found, not set up yet")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 2)
-                    ForEach(state.discovered) { project in
-                        ClassicDiscoveredRowView(project: project)
+                    if !state.discovered.isEmpty {
+                        Text("Found, not set up yet")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 2)
+                        ForEach(state.discovered) { project in
+                            ClassicDiscoveredRowView(project: project)
+                        }
                     }
                 }
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 6)
-            .padding(.bottom, 2)
 
             footer
         }
