@@ -153,6 +153,16 @@ enum AppRegistry {
             installArgs: [],
             stateDir: "\(home)/.lecpipeios"
         ),
+        // com.mustafaalbaree.starloft is the Mac app.
+        KnownApp(
+            id: "starloft",
+            displayName: "Starloft",
+            bundleID: "com.mammer55.starloft",
+            repoPath: "\(home)/Code/starloft/ios",
+            installScript: "\(home)/Code/starloft/ios/tools/install.sh",
+            installArgs: [],
+            stateDir: "\(home)/.starloft"
+        ),
     ]
 
     /// Directory names never worth descending into while scanning for stray
