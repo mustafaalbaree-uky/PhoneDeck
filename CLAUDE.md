@@ -52,4 +52,5 @@ There are two stamps now that more than one phone is in play. `last_install` is 
 - `NotificationManager.swift` — the single install result notification
 - `AppDelegate.swift` — menu bar item, popover wiring, launch at login registration
 - `RootView.swift` / `ContentView.swift` / `ClassicContentView.swift` — the two SwiftUI UIs
+- `FitOrScroll.swift` — lets the app list grow to the screen height, then scroll, so the footer never runs off screen
 - `LoginItem.swift`, `Theme.swift`, `AppIcons.swift` — small support utilities
