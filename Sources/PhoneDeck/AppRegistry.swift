@@ -163,6 +163,15 @@ enum AppRegistry {
             installArgs: [],
             stateDir: "\(home)/.starloft"
         ),
+        KnownApp(
+            id: "beemolitter",
+            displayName: "Beemo Litter",
+            bundleID: "com.mammer55.beemolitter",
+            repoPath: "\(home)/Code/beemo-litter",
+            installScript: "\(home)/Code/beemo-litter/tools/install.sh",
+            installArgs: [],
+            stateDir: "\(home)/.beemolitter"
+        ),
     ]
 
     /// Directory names never worth descending into while scanning for stray
