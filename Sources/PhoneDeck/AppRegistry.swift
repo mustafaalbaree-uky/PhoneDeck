@@ -31,6 +31,15 @@ enum AppRegistry {
     /// project grows a reinstall script of its own.
     static let known: [KnownApp] = [
         KnownApp(
+            id: "gracehour",
+            displayName: "Grace Hour",
+            bundleID: "com.mammer55.gracehour",
+            repoPath: "\(home)/Code/idea-lab/grace-hour/ios",
+            installScript: "\(home)/Code/idea-lab/grace-hour/ios/tools/install.sh",
+            installArgs: [],
+            stateDir: "\(home)/.gracehour"
+        ),
+        KnownApp(
             id: "stayathome",
             displayName: "Stay at Home",
             bundleID: "com.mustafaalbaree.stayathome",
